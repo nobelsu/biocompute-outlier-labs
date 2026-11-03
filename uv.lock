@@ -53,10 +53,14 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "cl-sdk" },
+    { name = "pygame-ce" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "cl-sdk", specifier = "==1.0.0" }]
+requires-dist = [
+    { name = "cl-sdk", specifier = "==1.0.0" },
+    { name = "pygame-ce", specifier = ">=2.5.8" },
+]
 
 [[package]]
 name = "blosc2"
@@ -810,6 +814,21 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/4d/2a/3a9f6624ee3ea9ccba5249dde11418bb4c35780a7a92608f8768bd3fea39/pydantic_core-2.50.1-cp313-cp313-win32.whl", hash = "sha256:06ead20d39ffd6f2f6f2a8f8a6de67ff8bb1b4f14a8a30e058502514ee2ac685", size = 2101118, upload-time = "2026-10-11T18:33:02.329Z" },
     { url = "https://files.pythonhosted.org/packages/2d/1f/323f78ddd9d9938aac420c1abb4e8ba799fc8bdab0acc67c0593b837c979/pydantic_core-2.50.1-cp313-cp313-win_amd64.whl", hash = "sha256:7816e98acc08119dc0f340ab167048ecc54126316330c1f0caf7c6756c88e28f", size = 2170840, upload-time = "2026-10-11T18:33:03.919Z" },
     { url = "https://files.pythonhosted.org/packages/cb/09/8497c52a739ae425c3ac2f7f56414cbc711c67d374346174f40fe2062644/pydantic_core-2.50.1-cp313-cp313-win_arm64.whl", hash = "sha256:c17799a62c142d61b8a3c51752a7cbc87fe2ad4ccfab10e628a77b405075c662", size = 2161633, upload-time = "2026-10-11T18:33:05.518Z" },
+]
+
+[[package]]
+name = "pygame-ce"
+version = "2.5.8"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/26/2d/0f942ec31d558a6a1f2fd0df9965ff0055f165ed5b8d36f6509b1f3768a2/pygame_ce-2.5.8.tar.gz", hash = "sha256:3c8e69088ead310037972c391306ea58e74d7296b35d1890067749235fd554ba", size = 5300831, upload-time = "2026-08-09T11:39:49.226Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8a/06/f2e2d9fe3eb2dc1fde30b90e250274e85ba355af729892ac71ba653924a1/pygame_ce-2.5.8-cp313-cp313-macosx_10_13_universal2.whl", hash = "sha256:56441a9bb75c2461750dc0e6e4a46e3833b3cf6339bfbaf16f93ecac037510f3", size = 16562516, upload-time = "2026-08-09T11:38:42.311Z" },
+    { url = "https://files.pythonhosted.org/packages/4d/fe/4be67df98bb05f7b024900f80fe4d07a72cec7022262d17c449b2a9f6034/pygame_ce-2.5.8-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:e3183bc0d808e739ca2400df45a5bfae10704ccbcacab0f04f9adc9027e86427", size = 12045702, upload-time = "2026-08-09T11:38:44.903Z" },
+    { url = "https://files.pythonhosted.org/packages/5d/8f/f7d283799aaa2208c1276f085d514f2ac37ce1bb5df940c7cbac7e6a6320/pygame_ce-2.5.8-cp313-cp313-manylinux2014_i686.manylinux_2_17_i686.whl", hash = "sha256:841aecccb498419367936bea0b1b0c6e9d635dc81c41ef26ec1769158f1ab871", size = 12585829, upload-time = "2026-08-09T11:38:47.507Z" },
+    { url = "https://files.pythonhosted.org/packages/27/4d/03fd52c7f958b8e929757a118cada9aee16ae9d4fd84f2682ee0cbd3941d/pygame_ce-2.5.8-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:5bb966b610e161a8f6d908b4c62ef3a1f3e922bc7bed73bd70a3e15dc780b90e", size = 12145623, upload-time = "2026-08-09T11:38:49.87Z" },
+    { url = "https://files.pythonhosted.org/packages/6e/61/c02613190a3256a656258bb4f677aecc09c3cb1f5521490ce7d5fb6308dd/pygame_ce-2.5.8-cp313-cp313-win32.whl", hash = "sha256:cab944d76af71e707803856b4db984ca90d9d6453e470e89771ed963c11ed912", size = 9123635, upload-time = "2026-08-09T11:38:52.452Z" },
+    { url = "https://files.pythonhosted.org/packages/c0/1b/da9186e5b88714c16fdb23bc4ba0bca4a75c21e3a5cf9607765773f68d22/pygame_ce-2.5.8-cp313-cp313-win_amd64.whl", hash = "sha256:f495b0eb7a5c54c59da58e964bc7f68073c3f43cf307729fd48309104a04c190", size = 9668342, upload-time = "2026-08-09T11:38:54.988Z" },
+    { url = "https://files.pythonhosted.org/packages/55/d3/78136bc51be25afbd7954c22488860e80f32d9a885f6667fed8aac7df0d6/pygame_ce-2.5.8-cp313-cp313-win_arm64.whl", hash = "sha256:dea22b4d4c418bbd0bd9853ae797ecfa882436d2684ceb6063ba8b520adc8500", size = 10211021, upload-time = "2026-08-09T11:38:57.529Z" },
 ]
 
 [[package]]
