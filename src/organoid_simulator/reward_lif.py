@@ -4,8 +4,8 @@ The SDK gives experiment code no handle on the simulator subprocess, so
 ``LIFDataSource.apply_reward`` is unreachable from a closed loop. This subclass
 treats stims on two reserved channels as reward signals instead of current:
 
-* ``REWARD_CHANNEL`` (1)  -> ``apply_reward(+1)``
-* ``PUNISH_CHANNEL`` (2)  -> ``apply_reward(-1)``
+* ``reward_channel`` (default 1) -> ``apply_reward(+1)``
+* ``punish_channel`` (default 2) -> ``apply_reward(-1)``
 
 All other stims are passed through unchanged. Simulator-only convention: on a
 CL1 these are ordinary stims.
@@ -19,12 +19,17 @@ PUNISH_CHANNEL = 2
 
 
 class RewardLIFDataSource(LIFDataSource):
+    def __init__(self, *, reward_channel: int = REWARD_CHANNEL, punish_channel: int = PUNISH_CHANNEL, **kwargs):
+        super().__init__(**kwargs)
+        self._reward_channel = reward_channel
+        self._punish_channel = punish_channel
+
     def on_stims(self, stims):
         passthrough = []
         for stim in stims:
-            if stim.channel == REWARD_CHANNEL:
+            if stim.channel == self._reward_channel:
                 self.apply_reward(+1.0)
-            elif stim.channel == PUNISH_CHANNEL:
+            elif stim.channel == self._punish_channel:
                 self.apply_reward(-1.0)
             else:
                 passthrough.append(stim)
