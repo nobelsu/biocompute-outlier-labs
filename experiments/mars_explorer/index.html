@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mars Explorer</title>
+<style>
+  :root {
+    --panel: rgba(18, 12, 10, 0.72);
+    --text: #f6e7da;
+    --muted: #c9a892;
+    --accent: #6fe3ff;
+    --warm: #ffb05c;
+    --ok: #8ef0a8;
+    --bad: #ff7a6b;
+  }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #2a130c; color: var(--text);
+    font: 13px/1.4 ui-monospace, Menlo, monospace; }
+  canvas#scene { display: block; }
+  .panel { position: absolute; background: var(--panel); border: 1px solid rgba(255, 190, 150, 0.15);
+    border-radius: 10px; padding: 12px 14px; backdrop-filter: blur(4px); }
+  #stats { top: 16px; left: 16px; min-width: 230px; }
+  #stats h1 { margin: 0 0 6px; font-size: 18px; letter-spacing: 0.08em; }
+  #mode { font-size: 16px; font-weight: 700; margin: 4px 0 8px; }
+  #mode.searching { color: var(--warm); }
+  #mode.homing { color: var(--accent); }
+  .row { display: flex; justify-content: space-between; gap: 18px; color: var(--muted); }
+  .row b { color: var(--text); font-weight: 600; }
+  #electrodes { top: 16px; right: 16px; }
+  #chart { bottom: 16px; left: 16px; }
+  .label { color: var(--muted); margin-bottom: 6px; }
+  .legend { color: var(--muted); font-size: 11px; margin-top: 6px; }
+  .legend span { margin-right: 8px; }
+  #controls { bottom: 16px; right: 16px; display: flex; gap: 8px; align-items: center; }
+  button { font: inherit; color: var(--text); background: #4a261a; border: 1px solid #7a4430; border-radius: 6px;
+    padding: 6px 12px; cursor: pointer; }
+  button:hover { background: #5e3020; }
+  #conn { color: var(--muted); }
+  @media (max-width: 700px) {
+    #electrodes, #chart { display: none; }
+  }
+</style>
+<script type="importmap">
+  { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+</script>
+</head>
+<body>
+<canvas id="scene"></canvas>
+
+<div id="stats" class="panel">
+  <h1>MARS EXPLORER</h1>
+  <div id="mode" class="searching">SEARCHING</div>
+  <div class="row">beacons found <b id="found">0</b></div>
+  <div class="row">crashes <b id="crashes">0</b></div>
+  <div class="row">last approach <b id="last">--</b></div>
+  <div class="row">altitude <b id="alt">--</b></div>
+  <div class="row">mission time <b id="time">0s</b></div>
+</div>
+
+<div id="electrodes" class="panel">
+  <div class="label">organoid electrodes (8x8)</div>
+  <canvas id="grid" width="200" height="200"></canvas>
+  <div class="legend"><span style="color:#ff8a8a">row 1 east/west</span><span style="color:#8affb0">row 4 alt</span><span style="color:#8ab8ff">row 6 north/south</span></div>
+</div>
+
+<div id="chart" class="panel">
+  <div class="label">seconds to reach each beacon (lower = learned)</div>
+  <canvas id="times" width="340" height="120"></canvas>
+</div>
+
+<div id="controls" class="panel">
+  <span id="conn">connecting…</span>
+  <button id="learn">pause learning</button>
+  <button id="reset">reset brain</button>
+</div>
+
+<script type="module">
+import * as THREE from "three";
+
+const params = new URLSearchParams(location.search);
+const ws = new WebSocket(`ws://${location.hostname}:${params.get("ws") || 8767}`);
+
+// --- scene -------------------------------------------------------------
+const canvas = document.getElementById("scene");
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xc98a62);
+scene.fog = new THREE.Fog(0xc98a62, 60, 210);
+const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 500);
+scene.add(new THREE.HemisphereLight(0xffd9b8, 0x5a2a18, 1.1));
+const sun = new THREE.DirectionalLight(0xfff0dd, 1.6);
+sun.position.set(60, 90, 30);
+scene.add(sun);
+
+function resize() {
+  renderer.setSize(innerWidth, innerHeight);
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+}
+addEventListener("resize", resize);
+resize();
+
+// Drone
+const drone = new THREE.Group();
+const bodyMat = new THREE.MeshStandardMaterial({ color: 0xdfe3ea, metalness: 0.4, roughness: 0.4 });
+drone.add(new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.45, 1.4), bodyMat));
+const armMat = new THREE.MeshStandardMaterial({ color: 0x30343c });
+const rotors = [];
+for (const [x, z] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.1, 1.6), armMat);
+  arm.position.set(x * 0.55, 0.1, z * 0.55);
+  arm.rotation.y = Math.atan2(x, z);
+  drone.add(arm);
+  const rotor = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.75, 0.04, 20),
+    new THREE.MeshStandardMaterial({ color: 0x111111, transparent: true, opacity: 0.55 }));
+  rotor.position.set(x * 1.1, 0.25, z * 1.1);
+  drone.add(rotor);
+  rotors.push(rotor);
+}
+const eye = new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 12), new THREE.MeshBasicMaterial({ color: 0x6fe3ff }));
+eye.position.set(0, 0, 0.75);
+drone.add(eye);
+// Thruster flames: one cone per axis direction
+const flameMat = new THREE.MeshBasicMaterial({ color: 0xffb04a, transparent: true, opacity: 0.85 });
+const flames = {};
+for (const [key, dir] of Object.entries({ x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] })) {
+  const cone = new THREE.Mesh(new THREE.ConeGeometry(0.22, 1.1, 10), flameMat);
+  cone.userData.dir = new THREE.Vector3(...dir);
+  drone.add(cone);
+  flames[key] = cone;
+}
+drone.scale.setScalar(1.6);
+scene.add(drone);
+
+// Scan ring under the drone shows detection range
+const scanRing = new THREE.Mesh(new THREE.RingGeometry(1, 1.25, 64),
+  new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.18, side: THREE.DoubleSide }));
+scanRing.rotation.x = -Math.PI / 2;
+scene.add(scanRing);
+
+// Line from drone to its current goal
+const goalGeom = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+const goalLine = new THREE.Line(goalGeom, new THREE.LineDashedMaterial({ color: 0xffffff, dashSize: 1, gapSize: 0.8,
+  transparent: true, opacity: 0.6 }));
+scene.add(goalLine);
+
+// Beacons
+const beacons = [];
+function makeBeacon() {
+  const g = new THREE.Group();
+  const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 40, 16, 1, true),
+    new THREE.MeshBasicMaterial({ color: 0x6fe3ff, transparent: true, opacity: 0.28, blending: THREE.AdditiveBlending,
+      depthWrite: false, side: THREE.DoubleSide }));
+  pillar.position.y = 20;
+  const core = new THREE.Mesh(new THREE.OctahedronGeometry(1.1),
+    new THREE.MeshStandardMaterial({ color: 0x6fe3ff, emissive: 0x2aa8cc, emissiveIntensity: 1.5 }));
+  core.position.y = 1.6;
+  g.add(pillar, core);
+  g.userData = { pillar, core };
+  scene.add(g);
+  return g;
+}
+
+// Dust drifting through the air around the camera
+const DUST = 1800;
+const dustPos = new Float32Array(DUST * 3);
+for (let i = 0; i < DUST * 3; i++) dustPos[i] = (Math.random() - 0.5) * 120;
+const dustGeom = new THREE.BufferGeometry();
+dustGeom.setAttribute("position", new THREE.BufferAttribute(dustPos, 3));
+const dust = new THREE.Points(dustGeom, new THREE.PointsMaterial({ color: 0xf2c49b, size: 0.25, transparent: true,
+  opacity: 0.6, depthWrite: false }));
+scene.add(dust);
+
+let heights = null, grid = 0, world = 100, sensorRows = [], detect = 40;
+
+// Nearest heightmap sample at world (x, z)
+function groundAt(x, z) {
+  const idx = (v) => Math.max(0, Math.min(grid - 1, Math.round((v + world) / (2 * world) * (grid - 1))));
+  return heights[idx(z) * grid + idx(x)];
+}
+
+function buildTerrain(msg) {
+  ({ grid, world, heights, detect } = msg);
+  sensorRows = msg.sensors;
+  const geom = new THREE.PlaneGeometry(world * 2, world * 2, grid - 1, grid - 1);
+  geom.rotateX(-Math.PI / 2);                 // plane row 0 lands at z = -world, matching heights row 0
+  const pos = geom.attributes.position;
+  const colors = new Float32Array(pos.count * 3);
+  const low = new THREE.Color(0x6b2a17), high = new THREE.Color(0xd9824f), c = new THREE.Color();
+  let min = Infinity, max = -Infinity;
+  for (const h of heights) { min = Math.min(min, h); max = Math.max(max, h); }
+  for (let i = 0; i < pos.count; i++) {
+    pos.setY(i, heights[i]);
+    c.copy(low).lerp(high, (heights[i] - min) / (max - min) + (Math.random() - 0.5) * 0.08);
+    colors.set([c.r, c.g, c.b], i * 3);
+  }
+  geom.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  geom.computeVertexNormals();
+  const mesh = new THREE.Mesh(geom, new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true,
+    roughness: 0.95 }));
+  scene.add(mesh);
+  scanRing.scale.setScalar(detect);
+}
+
+// --- state & interpolation ---------------------------------------------
+let prev = null, curr = null, recvAt = 0;
+ws.onopen = () => (document.getElementById("conn").textContent = "live");
+ws.onclose = () => (document.getElementById("conn").textContent = "disconnected");
+ws.onmessage = (ev) => {
+  const msg = JSON.parse(ev.data);
+  if (msg.type === "init") return buildTerrain(msg);
+  prev = curr || msg;
+  curr = msg;
+  recvAt = performance.now();
+  updateHud(msg);
+};
+
+document.getElementById("learn").onclick = () => ws.send(JSON.stringify({ cmd: "toggle_learning" }));
+document.getElementById("reset").onclick = () => ws.send(JSON.stringify({ cmd: "reset" }));
+
+const lerp3 = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
+const camPos = new THREE.Vector3(0, 30, -30), heading = new THREE.Vector3(0, 0, 1);
+
+let lastFrame = performance.now();
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min((now - lastFrame) / 1000, 0.5);
+  lastFrame = now;
+  if (curr) {
+    const t = Math.min((now - recvAt) / 50, 1);
+    const pos = new THREE.Vector3(...lerp3(prev.pos, curr.pos, t));
+    const vel = new THREE.Vector3(...curr.vel);
+    drone.position.copy(pos);
+    const flat = new THREE.Vector3(vel.x, 0, vel.z);
+    if (flat.lengthSq() > 0.3) heading.lerp(flat.normalize(), 1 - Math.exp(-dt * 2)).normalize();
+    drone.rotation.y = Math.atan2(heading.x, heading.z);
+    drone.rotation.z = -curr.thrust[0] * 0.12;
+    drone.rotation.x = curr.thrust[2] * 0.12;
+    rotors.forEach((r, i) => (r.rotation.y += 0.6 + i * 0.05));
+
+    // Flames point opposite to the thrust direction (exhaust).
+    const thr = { x: curr.thrust[0], y: curr.thrust[1], z: curr.thrust[2] };
+    for (const [k, cone] of Object.entries(flames)) {
+      const s = thr[k];
+      const visible = k === "y" ? s > 0 : s !== 0;
+      cone.visible = visible;
+      if (!visible) continue;
+      const out = cone.userData.dir.clone().multiplyScalar(-s);
+      const local = drone.worldToLocal(drone.position.clone().add(out)).normalize();
+      cone.position.copy(local.clone().multiplyScalar(k === "y" ? 0.75 : 1.05));
+      cone.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), local);   // cone tip points out
+      cone.scale.setScalar(0.8 + Math.random() * 0.4);
+    }
+
+    scanRing.position.set(pos.x, pos.y - 0.5, pos.z);
+    scanRing.material.opacity = curr.target >= 0 ? 0.08 : 0.18;
+
+    const goal = new THREE.Vector3(...curr.goal);
+    goalGeom.setFromPoints([pos, goal]);
+    goalLine.computeLineDistances();
+    goalLine.material.color.set(curr.target >= 0 ? 0x6fe3ff : 0xffffff);
+
+    while (beacons.length < curr.beacons.length) beacons.push(makeBeacon());
+    curr.beacons.forEach((b, i) => {
+      const g = beacons[i];
+      g.position.set(...b);
+      const active = i === curr.target;
+      const pulse = active ? 1 + 0.25 * Math.sin(now / 120) : 1;
+      g.userData.core.scale.setScalar(pulse);
+      g.userData.core.rotation.y = now / 600;
+      g.userData.pillar.material.opacity = active ? 0.5 : 0.22;
+    });
+
+    // Chase camera behind the direction of travel, kept clear of the hills
+    const want = pos.clone().add(heading.clone().multiplyScalar(-20)).add(new THREE.Vector3(0, 11, 0));
+    if (heights) want.y = Math.max(want.y, groundAt(want.x, want.z) + 6);
+    camPos.lerp(want, 1 - Math.exp(-dt * 2.5));   // frame-rate independent smoothing
+    if (heights) camPos.y = Math.max(camPos.y, groundAt(camPos.x, camPos.z) + 4);
+    camera.position.copy(camPos);
+    camera.lookAt(pos);
+
+    // Dust: wrap around the drone and drift with the wind
+    const d = dust.geometry.attributes.position;
+    for (let i = 0; i < DUST; i++) {
+      let x = d.getX(i) + 0.08, y = d.getY(i) - 0.01, z = d.getZ(i) + 0.03;
+      if (x - pos.x > 60) x -= 120; if (x - pos.x < -60) x += 120;
+      if (z - pos.z > 60) z -= 120; if (z - pos.z < -60) z += 120;
+      if (y - pos.y > 30) y -= 60; if (y - pos.y < -30) y += 60;
+      d.setXYZ(i, x, y, z);
+    }
+    d.needsUpdate = true;
+  }
+  renderer.render(scene, camera);
+}
+requestAnimationFrame(frame);
+
+// --- HUD ---------------------------------------------------------------
+const gridCtx = document.getElementById("grid").getContext("2d");
+const timesCtx = document.getElementById("times").getContext("2d");
+const heat = new Float32Array(64);
+const DEAD = new Set([0, 4, 7, 56, 63]);
+const ROW_COLORS = ["#ff8a8a", "#8affb0", "#8ab8ff"];
+
+function updateHud(s) {
+  const mode = document.getElementById("mode");
+  mode.textContent = s.target >= 0 ? "BEACON DETECTED — HOMING" : "SEARCHING";
+  mode.className = s.target >= 0 ? "homing" : "searching";
+  document.getElementById("found").textContent = s.found;
+  document.getElementById("crashes").textContent = s.crashes;
+  document.getElementById("last").textContent = s.times.length ? `${s.times.at(-1).toFixed(1)}s` : "--";
+  document.getElementById("time").textContent = `${Math.floor(s.t)}s`;
+  document.getElementById("learn").textContent = s.learning ? "pause learning" : "resume learning";
+  if (heights) document.getElementById("alt").textContent = `${(s.pos[1] - groundAt(s.pos[0], s.pos[2])).toFixed(1)} m`;
+
+  // Electrode grid
+  const sz = 25;
+  gridCtx.clearRect(0, 0, 200, 200);
+  for (let ch = 0; ch < 64; ch++) {
+    heat[ch] = heat[ch] * 0.7 + s.spikes[ch];
+    const r = Math.floor(ch / 8), c = ch % 8;
+    const v = Math.min(heat[ch] / 3, 1);
+    gridCtx.fillStyle = DEAD.has(ch) ? "#2a2020"
+      : `rgb(${40 + 215 * v | 0}, ${32 + 200 * v | 0}, ${30 + 160 * v | 0})`;
+    gridCtx.fillRect(c * sz + 1, r * sz + 1, sz - 3, sz - 3);
+    sensorRows.forEach((rowChs, k) => {
+      if (!rowChs.includes(ch)) return;
+      gridCtx.strokeStyle = ROW_COLORS[k];
+      gridCtx.lineWidth = s.sensors.includes(ch) ? 3 : 1;
+      gridCtx.strokeRect(c * sz + 1.5, r * sz + 1.5, sz - 4, sz - 4);
+    });
+  }
+
+  // Approach times: one bar per beacon, plus a running average line
+  const W = 340, H = 120, times = s.times;
+  timesCtx.clearRect(0, 0, W, H);
+  if (!times.length) {
+    timesCtx.fillStyle = "#c9a892";
+    timesCtx.fillText("no beacons reached yet", 10, H / 2);
+    return;
+  }
+  const max = Math.max(...times, 10);
+  const bw = W / Math.max(times.length, 10);
+  times.forEach((v, i) => {
+    const h = (v / max) * (H - 10);
+    timesCtx.fillStyle = "#ffb05c";
+    timesCtx.fillRect(i * bw + 1, H - h, bw - 2, h);
+  });
+  timesCtx.strokeStyle = "#8ef0a8";
+  timesCtx.lineWidth = 2;
+  timesCtx.beginPath();
+  times.forEach((_, i) => {
+    const win = times.slice(Math.max(0, i - 4), i + 1);
+    const avg = win.reduce((a, b) => a + b, 0) / win.length;
+    const y = H - (avg / max) * (H - 10);
+    i ? timesCtx.lineTo(i * bw + bw / 2, y) : timesCtx.moveTo(bw / 2, y);
+  });
+  timesCtx.stroke();
+}
+</script>
+</body>
+</html>
